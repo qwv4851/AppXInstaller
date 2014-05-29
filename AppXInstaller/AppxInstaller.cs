@@ -4,12 +4,14 @@ using System.Linq;
 using System.Threading;
 using System.Xml;
 
+using Ionic.Crc;
 using Ionic.Zip;
 
 using Windows.ApplicationModel;
 using Windows.Foundation;
 using Windows.Management.Deployment;
 using System.Security.Principal;
+using System.IO;
 
 namespace AppXInstaller
 {
@@ -17,28 +19,71 @@ namespace AppXInstaller
     {
         public AppXManifest(string packagePath)
         {
+            PackagePath = packagePath;
+
             XmlDocument manifest = new XmlDocument();
             
             using (ZipFile zip = ZipFile.Read(packagePath))
             {
-                var reader = zip["AppxManifest.xml"].OpenReader();
+                CrcCalculatorStream reader = zip["AppxManifest.xml"].OpenReader();
                 manifest.Load(reader);
             }
 
-            var identity = manifest["Package"]["Identity"];
+            XmlElement package = manifest["Package"];
+            XmlElement identity = package["Identity"];
 
             Name = identity.GetAttribute("Name");
             Publisher = identity.GetAttribute("Publisher");
             Version = identity.GetAttribute("Version");
+
+            XmlElement framework = package["Properties"]["Framework"];
+            if (framework != null)
+            {
+                IsFramework = Boolean.Parse(framework.InnerText);
+            }
+
+            Dependencies = new List<string>();
+            XmlElement dependencies = package["Dependencies"];
+            if (dependencies != null)
+            {
+                foreach (XmlElement dependency in dependencies)
+                {
+                    Dependencies.Add(dependency.GetAttribute("Name"));
+                }
+            }
+        }
+
+        public Dictionary<string, AppXManifest> ParseDepencyManifests()
+        {
+            Dictionary<string, AppXManifest> depenencyManifests = new Dictionary<string, AppXManifest>();
+
+            // Search the relative package path for depenency bundles
+            string directory = Path.GetDirectoryName(PackagePath);
+            string[] packagePaths = Directory.GetFiles(directory, "*appx", SearchOption.AllDirectories);
+
+            foreach (string packagePath in packagePaths)
+            {
+                AppXManifest dependency = new AppXManifest(packagePath);
+                if (dependency.IsFramework && !depenencyManifests.ContainsKey(dependency.Name))
+                {
+                    depenencyManifests.Add(dependency.Name, dependency);
+                }
+            }
+            return depenencyManifests;
         }
 
         public string Name { private set; get; }
         public string Publisher { private set; get; }
         public string Version { private set; get; }
+        public List<string> Dependencies { private set; get; }
+        public string PackagePath { private set; get; }
+        public bool IsFramework { private set; get; }
     }
+
     class AppxInstaller
     {
         private static PackageManager packageManager = new PackageManager();
+        private static Dictionary<string, AppXManifest> depenencyManifests;
 
         static void Main(string[] args)
         {
@@ -51,9 +96,11 @@ namespace AppXInstaller
                 string sid = WindowsIdentity.GetCurrent().User.ToString();
                 IEnumerable<Package> packages = packageManager.FindPackagesForUser(sid, manifest.Name, manifest.Publisher);
 
+                depenencyManifests = manifest.ParseDepencyManifests();
+
                 if (packages.Count() == 0)
                 {
-                    success &= InstallPackage(packagePath); 
+                    success &= InstallPackage(packagePath, manifest.Dependencies); 
                 }
                 else
                 {
@@ -79,10 +126,10 @@ namespace AppXInstaller
                     {
                         case '1':
                             success &= UninstallPackage(package.Id.FullName);
-                            success &= InstallPackage(packagePath);
+                            success &= InstallPackage(packagePath, manifest.Dependencies);
                             break;
                         case '2':
-                            success &= InstallPackage(packagePath, null, true);
+                            success &= InstallPackage(packagePath, manifest.Dependencies, true);
                             break;
                         case '3':
                             success &= UninstallPackage(package.Id.FullName);
@@ -90,12 +137,13 @@ namespace AppXInstaller
                         case '4':
                             return;
                     }
+                }
 
-                    if (!success)
-                    {
-                        Console.WriteLine("Press any key to continue...");
-                        while (!Console.KeyAvailable);
-                    }
+                // If an error has been detected, wait for a key press
+                if (!success)
+                {
+                    Console.WriteLine("Press any key to continue...");
+                    while (!Console.KeyAvailable) ;
                 }
             }
             else
@@ -104,10 +152,20 @@ namespace AppXInstaller
             }
         }
 
-        private static bool InstallPackage(string inputPackageUri, IEnumerable<Uri> dependencyPackageUris = null, bool update = false)
+
+
+        private static bool InstallPackage(string inputPackageUri, List<string> dependencies = null, bool update = false)
         {
             Uri packageUri = new Uri(inputPackageUri);
             IAsyncOperationWithProgress<DeploymentResult, DeploymentProgress> deploymentOperation;
+            List<Uri> dependencyPackageUris = new List<Uri>();
+            
+            
+            // Construct depenency URIs relative to the package path
+            foreach (string dependency in dependencies)
+            {
+                dependencyPackageUris.Add(new Uri(depenencyManifests[dependency].PackagePath));
+            }
 
             Console.WriteLine("Installing package...");
 

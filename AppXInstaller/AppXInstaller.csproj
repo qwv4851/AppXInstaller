@@ -47,10 +47,7 @@
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Data" />
     <Reference Include="System.Xml" />
-    <Reference Include="Windows.ApplicationModel" />
-    <Reference Include="Windows.Foundation" />
-    <Reference Include="Windows.Management" />
-    <Reference Include="Windows.Storage" />
+    <Reference Include="windows" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AppxInstaller.cs" />
