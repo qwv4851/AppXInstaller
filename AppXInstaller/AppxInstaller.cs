@@ -25,7 +25,23 @@ namespace AppXInstaller
             
             using (ZipFile zip = ZipFile.Read(packagePath))
             {
-                CrcCalculatorStream reader = zip["AppxManifest.xml"].OpenReader();
+                ZipEntry manifestFile = zip["AppxManifest.xml"];
+
+                // If no manifest file is found, it might be a bundle
+                if (manifestFile == null)
+                {
+                    string appxPath = String.Format("{0}.appx", Path.GetFileNameWithoutExtension(packagePath));
+                    ZipEntry appxFile = zip[appxPath];
+                    CrcCalculatorStream appxReader = appxFile.OpenReader();
+                    byte[] buffer = new byte[appxReader.Length];
+
+                    appxReader.Read(buffer, 0, (int)appxReader.Length);
+
+                    ZipFile appxZip = ZipFile.Read(new MemoryStream(buffer));
+                    manifestFile = appxZip["AppxManifest.xml"];
+                }
+
+                CrcCalculatorStream reader = manifestFile.OpenReader();
                 manifest.Load(reader);
             }
 
