@@ -75,7 +75,7 @@ namespace AppXInstaller
 
             // Search the relative package path for depenency bundles
             string directory = Path.GetDirectoryName(PackagePath);
-            string[] packagePaths = Directory.GetFiles(directory, "*appx", SearchOption.AllDirectories);
+            string[] packagePaths = Directory.GetFiles(directory, "*appx");
 
             foreach (string packagePath in packagePaths)
             {
@@ -168,8 +168,6 @@ namespace AppXInstaller
             }
         }
 
-
-
         private static bool InstallPackage(string inputPackageUri, List<string> dependencies = null, bool update = false)
         {
             Uri packageUri = new Uri(inputPackageUri);
@@ -180,6 +178,11 @@ namespace AppXInstaller
             // Construct depenency URIs relative to the package path
             foreach (string dependency in dependencies)
             {
+                if (!depenencyManifests.ContainsKey(dependency))
+                {
+                    Console.WriteLine("Error: Missing dependency \"{0}\"", dependency);
+                    return false;
+                }
                 dependencyPackageUris.Add(new Uri(depenencyManifests[dependency].PackagePath));
             }
 
@@ -207,8 +210,9 @@ namespace AppXInstaller
             if (deploymentOperation.Status == AsyncStatus.Error)
             {
                 DeploymentResult deploymentResult = deploymentOperation.GetResults();
-                Console.WriteLine("Error code: {0}", deploymentOperation.ErrorCode);
-                Console.WriteLine("Error text: {0}", deploymentResult.ErrorText);
+                Console.WriteLine(deploymentOperation.ErrorCode);
+                Console.WriteLine(deploymentResult.ExtendedErrorCode);
+
                 return false;
             }
             else if (deploymentOperation.Status == AsyncStatus.Canceled)
